@@ -1,20 +1,29 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Whitelist Terminal</title>
+  <title>Whitelist Mint Terminal</title>
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.min.js"></script>
   <style>
     body {
+      margin: 0;
       background: black;
       color: #00ff00;
       font-family: monospace;
       text-align: center;
-      padding-top: 100px;
+      overflow: hidden;
+    }
+
+    canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: -1;
     }
 
     #terminal {
-      font-size: 18px;
-      min-height: 60px;
+      margin-top: 80px;
+      min-height: 120px;
+      white-space: pre-line;
     }
 
     button {
@@ -30,73 +39,186 @@
       background: #00ff00;
       color: black;
     }
+
+    #nftPreview {
+      margin-top: 20px;
+      width: 200px;
+      border: 1px solid #00ff00;
+    }
+
+    #countdown {
+      margin-top: 15px;
+      font-size: 18px;
+    }
   </style>
 </head>
 <body>
 
-<h1>WHITELIST ACCESS TERMINAL</h1>
+<canvas id="matrix"></canvas>
+
+<h1>BASE WHITELIST MINT TERMINAL</h1>
 
 <div id="terminal"></div>
 
+<div id="countdown"></div>
+
+<img id="nftPreview" src="https://your-nft-image-url.png">
+
+<br>
 <button onclick="connectWallet()">Connect Wallet</button>
+<button id="mintBtn" style="display:none;" onclick="mintNFT()">Mint</button>
+
+<h3 id="supply"></h3>
+
+<audio id="beep" src="https://www.soundjay.com/button/beep-07.wav"></audio>
 
 <script>
-  const text = "Initializing whitelist protocol...\nChecking wallet eligibility...\n";
-  const terminal = document.getElementById("terminal");
+/* ================= MATRIX EFFECT ================= */
+const canvas = document.getElementById("matrix");
+const ctx = canvas.getContext("2d");
 
+canvas.height = window.innerHeight;
+canvas.width = window.innerWidth;
+
+const letters = "01";
+const fontSize = 14;
+const columns = canvas.width / fontSize;
+const drops = [];
+
+for (let x = 0; x < columns; x++) drops[x] = 1;
+
+function drawMatrix() {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#0f0";
+  ctx.font = fontSize + "px monospace";
+
+  for (let i = 0; i < drops.length; i++) {
+    const text = letters.charAt(Math.floor(Math.random() * letters.length));
+    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975)
+      drops[i] = 0;
+
+    drops[i]++;
+  }
+}
+setInterval(drawMatrix, 33);
+
+/* ================= TERMINAL EFFECT ================= */
+const terminal = document.getElementById("terminal");
+const beep = document.getElementById("beep");
+
+function typeLine(text) {
   let i = 0;
-  function typeWriter() {
-    if (i < text.length) {
-      terminal.innerHTML += text.charAt(i);
-      i++;
-      setTimeout(typeWriter, 40);
+  const interval = setInterval(() => {
+    terminal.innerHTML += text.charAt(i);
+    beep.play();
+    i++;
+    if (i >= text.length) {
+      terminal.innerHTML += "\n";
+      clearInterval(interval);
     }
+  }, 30);
+}
+
+/* ================= CONFIG ================= */
+const CONTRACT_ADDRESS = "0xYOUR_CONTRACT";
+const MINT_PRICE = "0.001"; // in ETH
+const MINT_START = 1700000000; // Unix timestamp
+const ABI = [
+  "function whitelist(address) view returns (bool)",
+  "function mint(uint256 quantity) payable",
+  "function totalSupply() view returns (uint256)",
+  "function maxSupply() view returns (uint256)"
+];
+
+let provider, signer, contract;
+
+/* ================= COUNTDOWN ================= */
+function updateCountdown() {
+  const now = Math.floor(Date.now() / 1000);
+  const diff = MINT_START - now;
+  const cd = document.getElementById("countdown");
+
+  if (diff <= 0) {
+    cd.innerText = "Mint is LIVE";
+  } else {
+    const mins = Math.floor(diff / 60);
+    const secs = diff % 60;
+    cd.innerText = `Mint starts in ${mins}m ${secs}s`;
+  }
+}
+setInterval(updateCountdown, 1000);
+
+/* ================= CONNECT ================= */
+async function connectWallet() {
+  if (!window.ethereum) {
+    alert("Install MetaMask");
+    return;
   }
 
-  typeWriter();
+  await window.ethereum.request({
+    method: "wallet_switchEthereumChain",
+    params: [{ chainId: "0x2105" }] // Base Mainnet
+  }).catch(async () => {
+    await window.ethereum.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId: "0x2105",
+        chainName: "Base Mainnet",
+        rpcUrls: ["https://mainnet.base.org"],
+        nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+        blockExplorerUrls: ["https://basescan.org"]
+      }]
+    });
+  });
 
-  async function connectWallet() {
-    if (!window.ethereum) {
-      alert("Install MetaMask first.");
-      return;
-    }
+  provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send("eth_requestAccounts", []);
+  signer = await provider.getSigner();
+  const address = await signer.getAddress();
 
-    const provider = new ethers.BrowserProvider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    const signer = await provider.getSigner();
-    const userAddress = await signer.getAddress();
+  contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
 
-    terminal.innerHTML += "\nWallet Connected: " + userAddress;
+  typeLine("Wallet Connected: " + address);
 
-    // 🌐 Check Network (Base Mainnet = 8453)
-    const network = await provider.getNetwork();
-    if (Number(network.chainId) !== 8453) {
-      terminal.innerHTML += "\nWrong network. Switch to Base.";
-      return;
-    }
+  const eligible = await contract.whitelist(address);
 
-    // 🔗 Contract Setup
-    const contractAddress = "0xYOUR_CONTRACT_ADDRESS";
-    const abi = [
-      "function whitelist(address) view returns (bool)"
-    ];
-
-    const contract = new ethers.Contract(contractAddress, abi, provider);
-
-    try {
-      const isWhitelisted = await contract.whitelist(userAddress);
-
-      if (isWhitelisted) {
-        terminal.innerHTML += "\nAccess Granted ✅";
-      } else {
-        terminal.innerHTML += "\nAccess Denied ❌";
-      }
-
-    } catch (err) {
-      console.error(err);
-      terminal.innerHTML += "\nError verifying contract.";
-    }
+  if (eligible) {
+    typeLine("Whitelist verified ✅");
+    document.getElementById("mintBtn").style.display = "inline-block";
+  } else {
+    typeLine("Not whitelisted ❌");
   }
+
+  updateSupply();
+}
+
+/* ================= SUPPLY ================= */
+async function updateSupply() {
+  const total = await contract.totalSupply();
+  const max = await contract.maxSupply();
+  document.getElementById("supply").innerText =
+    `Minted: ${total} / ${max}`;
+}
+
+/* ================= MINT ================= */
+async function mintNFT() {
+  const value = ethers.parseEther(MINT_PRICE);
+
+  try {
+    const tx = await contract.mint(1, { value });
+    typeLine("Minting...");
+    await tx.wait();
+    typeLine("Mint successful 🚀");
+    updateSupply();
+  } catch (err) {
+    console.error(err);
+    typeLine("Mint failed ❌");
+  }
+}
 </script>
 
 </body>
