@@ -1,45 +1,103 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ACCESS TERMINAL</title>
+  <title>Whitelist Terminal</title>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.min.js"></script>
   <style>
     body {
-      background-color: black;
-      color: lime;
+      background: black;
+      color: #00ff00;
       font-family: monospace;
       text-align: center;
       padding-top: 100px;
     }
 
-    input {
-      display: block;
-      margin: 15px auto;
-      padding: 10px;
-      width: 300px;
-      background: black;
-      color: lime;
-      border: 1px solid lime;
+    #terminal {
+      font-size: 18px;
+      min-height: 60px;
     }
 
     button {
+      margin-top: 20px;
       padding: 10px 20px;
-      background: lime;
-      border: none;
+      background: black;
+      border: 1px solid #00ff00;
+      color: #00ff00;
       cursor: pointer;
+    }
+
+    button:hover {
+      background: #00ff00;
+      color: black;
     }
   </style>
 </head>
 <body>
 
-  <h1>POKI ACCESS TERMINAL</h1>
+<h1>WHITELIST ACCESS TERMINAL</h1>
 
-  <form>
-    <input type="text" placeholder="@username (X)">
-    <input type="text" placeholder="Base addy">
-    <input type="text" placeholder="Like/RT link">
-    <input type="password" placeholder="Password">
-    <button type="submit">Submit</button>
-  </form>
+<div id="terminal"></div>
+
+<button onclick="connectWallet()">Connect Wallet</button>
+
+<script>
+  const text = "Initializing whitelist protocol...\nChecking wallet eligibility...\n";
+  const terminal = document.getElementById("terminal");
+
+  let i = 0;
+  function typeWriter() {
+    if (i < text.length) {
+      terminal.innerHTML += text.charAt(i);
+      i++;
+      setTimeout(typeWriter, 40);
+    }
+  }
+
+  typeWriter();
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      alert("Install MetaMask first.");
+      return;
+    }
+
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    const signer = await provider.getSigner();
+    const userAddress = await signer.getAddress();
+
+    terminal.innerHTML += "\nWallet Connected: " + userAddress;
+
+    // 🌐 Check Network (Base Mainnet = 8453)
+    const network = await provider.getNetwork();
+    if (Number(network.chainId) !== 8453) {
+      terminal.innerHTML += "\nWrong network. Switch to Base.";
+      return;
+    }
+
+    // 🔗 Contract Setup
+    const contractAddress = "0xYOUR_CONTRACT_ADDRESS";
+    const abi = [
+      "function whitelist(address) view returns (bool)"
+    ];
+
+    const contract = new ethers.Contract(contractAddress, abi, provider);
+
+    try {
+      const isWhitelisted = await contract.whitelist(userAddress);
+
+      if (isWhitelisted) {
+        terminal.innerHTML += "\nAccess Granted ✅";
+      } else {
+        terminal.innerHTML += "\nAccess Denied ❌";
+      }
+
+    } catch (err) {
+      console.error(err);
+      terminal.innerHTML += "\nError verifying contract.";
+    }
+  }
+</script>
 
 </body>
 </html>
